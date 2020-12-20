@@ -1,5 +1,6 @@
 # Lending Club
-### Data-Driven Investment Strategies for Peer-to-Peer Lending: A Case Study for Teaching Data Science
+### Data-Driven Investment Strategies for Peer-to-Peer Lending
+#### A Case Study for Teaching Data Science
 ###### By MCC, CDG, KJ, FP
 
 #### Objective: Investment strategies and portfolio construction
