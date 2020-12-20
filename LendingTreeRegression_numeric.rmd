@@ -1,0 +1,479 @@
+---
+title: "IE2064 - Case Study 2"
+author: "Jessica Starck and Loyu Liu"
+date: "3/22/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Lending Tree Prediction Models
+
+```{r, warning=FALSE, message=FALSE}
+library(readr)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(DMwR)
+```
+
+
+```{r}
+load("LoanRegression_numeric.Rdata")
+```
+
+```
+{r}
+#verify there are no missing values and no variables with only 1 value
+subset1 %>%
+  tibble::rowid_to_column("obs_id") %>% 
+  tidyr::gather(key = "key", value = "value", -obs_id) %>% 
+  group_by(key) %>% 
+  summarise(num_rows = n(),
+            num_missing = sum(is.na(value)),
+            num_unique = n_distinct(value)) %>% 
+  knitr::kable()
+```
+```{r}
+glimpse(tidyloans)
+```
+
+
+```{r}
+#first make subset data smaller
+index <- sample(nrow(tidyloans),as.integer(nrow(tidyloans)*0.005))
+tidyloans_new <- tidyloans[index,]
+
+
+#split into train and test.
+set.seed(123)
+idxTrain <- sample(nrow(tidyloans_new),as.integer(nrow(tidyloans_new)*0.8))
+TrainLoans <- tidyloans_new[idxTrain,]
+TestLoans <- tidyloans_new[-idxTrain,]
+
+fitControl <- trainControl(method ="cv", number = 10)
+```
+
+```{r}
+dim(TrainLoans)
+dim(TestLoans)
+```
+
+
+
+Regression Models
+===================
+  
+  
+#Linear Regression (do not run because it is not a good model for this data and is very long results)
+set.seed(100)
+lm.model <- train(ROI ~ ., 
+                  data = TrainLoans,
+                  method = "lm",
+                  trControl = fitControl, 
+                  na.action = na.omit)
+lm.model$results
+head(summary(lm.model), 30)
+
+
+lmplot <- TrainLoans 
+lmplot$Pred1 <- lm.model$finalModel$fitted.values 
+ggplot(lmplot) + geom_point(aes(Pred1, ROI)) + geom_smooth(aes(Pred1, ROI), method="lm") + ggtitle("Linear Model") + xlab("Predictions") + ylab("True Values")
+
+    
+    
+### Ridge Regression
+
+```
+{r ridge reg, warning=FALSE, message = FALSE}
+
+set.seed(200)
+ridgeGrid <- expand.grid(lambda = seq(0, .1, length = 15))
+ridge.model <- train(ROI ~ ., 
+                     data = TrainLoans, 
+                     method = "ridge", 
+                     trControl = fitControl, 
+                     tuneGrid = ridgeGrid, 
+                     na.action = na.omit)
+```
+
+```{r}
+#ridge.model
+print(update(plot(ridge.model), xlab = "Penalty"))
+#ridge.model$resample
+
+#ridgeImp <- varImp(ridge.model, scale = FALSE) 
+#plot(ridgeImp, top = 25)
+```
+
+```{r}
+ridge.model$results %>%
+  arrange(RMSE)
+```
+ - the minimum RMSE in this Ridge regression is 5506.218 with $\lambda$ = 0.10, and RMSESD = 480.9916.       
+ - the range of the RMSE with one statndard deviation is (5025.0084, 5987.2096). The model within the range and has less complexity with the highest R-Squared is the best regression model, which is the one with RMSE = 5506.242, lambda = 0.092857143.          
+ 
+### Lasso
+
+```
+{r lasso, warning=FALSE, message = FALSE}
+set.seed(300)
+enetGrid <- expand.grid(lambda = c(0, 0.01, .1), fraction = seq(.05, .5, length = 10))
+lasso.model <- train(ROI ~ ., 
+                     data = TrainLoans, 
+                     method = "enet", 
+                     trControl = fitControl, 
+                     tuneGrid = enetGrid, 
+                     na.action = na.omit)
+```
+
+```{r}
+plot(lasso.model)
+
+#lassoImp <- varImp(lasso.model) 
+#plot(lassoImp, top = 25)
+```
+
+```{r}
+lasso.model$results %>%
+  arrange(RMSE)
+```
+
+ - the minimum RMSE in this Lasso regression is 5605.881 with $\lambda$ = 0.10, fraction = 0.25, and RMSESD = 460.5108.          
+ - the range of the RMSE with one statndard deviation is (5145.37, 6066.392). The model within the range and has less complexity with the highest R-Squared is the best regression model, which is the one with RMSE = 5607.426, lambda = 0.01, and fraction = 0.20.  
+ 
+### Regression Tree (Recursive Partitioning)
+
+```
+{r reg tree, warning=FALSE, message = FALSE}
+set.seed(400)
+rpart.model <- train(ROI ~ ., 
+                     data = TrainLoans, 
+                     method = "rpart", 
+                     trControl = fitControl, 
+                     tuneLength = 30 , 
+                     na.action = na.omit)
+```
+
+```{r}
+rpart.model$finalModel
+
+ggplot(rpart.model$results, aes(x=cp, y=RMSE)) + geom_pointrange(aes(ymin = RMSE-RMSESD, ymax=RMSE+RMSESD)) + geom_line() + ylab("RMSE (Crossvalidation)") + xlab("Complexity parameter (cp)")
+
+#Variable Importance
+#rpartImp <- varImp(rpart.model, scale = FALSE) 
+#plot(rpartImp, top = 25)
+```
+
+
+### K-Nearest Neighbors
+
+```
+{r knn, warning=FALSE, message = FALSE}
+# First we remove near-zero variance predictors 
+knnDescr <- TrainLoans[, -nearZeroVar(TrainLoans)]
+
+set.seed(500)
+knn.model <- train(ROI ~ ., 
+                   data = TrainLoans, 
+                   method = "knn", 
+                   preProc = c("center", "scale"), 
+                   tuneGrid = data.frame(k=1:20), 
+                   trControl = fitControl, 
+                   na.action = na.omit)
+```
+
+```{r}
+plot(knn.model)
+
+#knnImp <- varImp(knn.model, scale = FALSE) 
+#plot(knnImp, top = 25)
+```
+
+```{r}
+knn.model$results %>%
+  arrange(RMSE)
+```
+
+ - the minimum RMSE in this KNN is 5638.779 with K = 20, and RMSESD = 355.3665	.          
+ - the range of the RMSE with one statndard deviation is (5283.413, 5994.146). The model within the range and has less complexity with the highest R-Squared is the best regression model, which is the one with RMSE = 5607.426, lambda = 0.01, and fraction = 0.20.  
+ 
+ 
+### Random Forest
+
+```
+{r rf, warning=FALSE, message = FALSE}
+set.seed(600)
+mtryGrid <- data.frame(mtry = floor(seq(10, ncol(TrainLoans), length = 10)))
+rf.model <- train(ROI ~ ., 
+                  data = TrainLoans, 
+                  method = "rf", 
+                  tuneGrid = mtryGrid, 
+                  ntree= 500, 
+                  trControl = fitControl, 
+                  na.action = na.omit)
+```
+
+```{r}
+rf.model$results %>%
+  arrange(RMSE)
+```
+
+ - the minimum RMSE in the Random Forest regression is 5484.816	 with mtry = 11, and RMSESD = 307.0106.               
+ - the range of the RMSE with one statndard deviation is (5177.805, 5791.827). The model within the range and has less complexity with the highest R-Squared is the best regression model, which is the one with RMSE = 5488.265	and mtry = 13.    
+ 
+```{r}
+ggplot(rf.model$results, aes(x=mtry, y=RMSE)) + 
+  geom_pointrange(aes(ymin = RMSE-RMSESD, ymax=RMSE+RMSESD)) + 
+  geom_line() + ylab("RMSE (Crossvalidation)") + 
+  xlab("Number of randomly selected variables (mtry)")
+
+#rfImp <- varImp(rf.model) 
+#plot(rfImp, top = 25)
+```
+  
+### Ensemble:  Boosting (GBM)
+
+```
+{r boosting, warning=FALSE, message = FALSE}
+set.seed(700)
+gbmGrid <- expand.grid(interaction.depth = seq(1, 7, by = 2), 
+                       n.trees = seq(200, 1000, by = 200), 
+                       shrinkage = c(0.01, 0.1), 
+                       n.minobsinnode = 10)
+gbm.model <- train(ROI ~., 
+                   TrainLoans, 
+                   method = "gbm", 
+                   tuneGrid = gbmGrid, 
+                   trControl = fitControl, 
+                   verbose = FALSE, na.action = na.omit)
+```
+
+```{r}
+plot(gbm.model, auto.key = list(columns = 4, lines = TRUE))
+
+#gbmImp <- varImp(gbm.model)
+#plot(gbmImp, top = 20)
+
+```
+
+```{r}
+gbm.model$results %>%
+  arrange(RMSE)
+```
+
+ - the minimum RMSE in the Random Forest regression is 5479.538	with n.trees = 1000, and RMSESD = 468.4565.               
+ - the range of the RMSE with one statndard deviation is (5011.081, 5947.994). The model within the range and has less complexity with the highest R-Squared is the best regression model, which is the one with RMSE = 5488.327, n.trees = 600, and R-Squared = 0.04242150.      
+ 
+#### Multivariate Adaptive Regression Splines (MARS)
+
+```
+{r MARS, warning=FALSE, message = FALSE}
+library(earth)
+marsGrid <- expand.grid(degree = 1:3,
+                        nprune = 1:30)
+set.seed(800)
+marsTune <- train(ROI~.,
+                  data = TrainLoans,
+                  method = "earth",
+                  tuneGrid = marsGrid,
+                  trControl =fitControl)
+```
+
+```{r}
+plot(marsTune, 
+     xlab = "nprune in MARS model")
+
+#marsImp <- varImp(marsTune)
+#plot(marsImp, top = 20)
+```
+  
+```{r}
+marsTune$results %>%
+  arrange(RMSE)
+```
+
+ - the minimum RMSE in the Random Forest regression is 5507.854	with degree = 1, nprune = 7, and RMSESD = 376.4649.                   
+ - the range of the RMSE with one statndard deviation is (5131.389, 5884.319). The model within the range and has less complexity with the highest R-Squared is the best regression model, which is the one with RMSE = 5510.091, degree = 1, nprune = 8, and Rsquared = 0.025087056.         
+#### Bagging 
+
+```
+{r Bagging, warning=FALSE, message = FALSE}
+set.seed(6543210)
+treebagTune <- train(ROI~., 
+                     data = TrainLoans,
+                     method = "treebag",
+                     nbagg = 100,
+                     trControl = fitControl)
+```
+
+```{r}
+treebagTune
+
+#bagImp <- varImp(treebagTune)
+#plot(bagImp, top = 20)
+```
+
+```{r}
+treebagTune$results 
+```
+  
+Model Comparison
+====================
+The values below are the selected best options for each model given the complexity and improvement diffrential as complexity increases. This was done by determining the lowest RMSE value, adding the RMSESD to that value and finding the simpliest (lowest complexity) outcome. 
+
+```{r, warning=FALSE, echo=FALSE}
+result <- data.frame(Model.Type = c("Ridge","Lasso",
+                                        "MARS", "KNN",
+                                        "Random Forest", "Boosting", "Bagging"),
+                         RMSE = c(5506.242, 5607.426, 
+                                  5510.091, 5733.662,
+                                  5488.265, 5488.327, 5521.194),
+                         RMSESD = c(481.0030, 458.1981,
+                                    375.3644, 385.4345,
+                                    313.8690, 506.0901, 530.5418),
+                         RSquared = c(0.01827156, 0.01652460,
+                                      0.025087056, 0.006982205, 
+                                      0.03767936, 0.0424215, 0.02268496))
+result
+```
+
+```{r, warning=FALSE, echo=FALSE}
+ggplot(result, mapping = aes(x = Model.Type, y = RMSE)) +
+  geom_pointrange(aes(ymin = RMSE - RMSESD,
+                      ymax = RMSE + RMSESD)) +
+  xlab("Model Type") +
+  ylab("RMSE (Crossvalidation)") +
+  geom_hline(aes(yintercept = min(RMSE)), 
+             color = "tomato",
+             linetype = "dashed", 
+             size = 0.5) +
+  ggtitle("Model Comparison", subtitle = "red horizontal line indicates the minimum RMSE") 
+```
+ 
+ - Using Random Forest as the chosen model    
+ 
+ 
+Predict Results - RF
+=====================
+First, let's see which variables are important to the model
+```{r varImp}
+rf.varimp <- varImp(rf.model)
+rf.varimp
+```
+
+```{r}
+plot(rf.varimp, top = 20)
+```
+
+```{r predict}
+prediction <- predict(rf.model,
+                      TestLoans) 
+prediction <- as.data.frame(prediction)
+```
+
+
+Using Random Forest as the chosen model
+```{r}
+predictcbind <- cbind(prediction, TestLoans) 
+```
+
+The plot below shows the comparison the prediction ROI and the True ROI.
+ - the verticle lines show that the predict ROI is higher than the true ROI, which means that the customer may have a chance to have a higher ROI.
+
+```{r comparison plot}
+ggplot(predictcbind, mapping = aes(x = ROI)) +
+  geom_density(mapping = aes(color = "ROI"), size = 1) +
+  geom_vline(aes(xintercept = mean(ROI), color = "ROI"), 
+             size = 1) +
+  geom_density(aes(x = prediction, color = "Prediction"), size = 1) +
+  geom_vline(aes(xintercept = mean(prediction)),
+             color = "tomato",
+             linetype = "dashed", 
+             size = 1) +
+  coord_cartesian(xlim=c(-2000, 2000)) +
+  xlab("ROI") +
+  ggtitle("Comparing Prediction of ROI and True ROI",
+          subtitle = "verticle lines indicate the mean for each type of ROI")
+```
+
+```{r}
+summary(predictcbind$prediction)
+summary(predictcbind$ROI)
+```
+
+Look deep into the variable importance, we know that the variable of `installment` has the highest importance to the model. Let's see how does the ROI be influenced by installment in the model and the reality.
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(predictcbind) +
+  geom_smooth(aes(x = installment, y = ROI, color = "TrueROI")) +
+  geom_smooth(aes(x = installment, y = prediction, color = "Prediction")) +
+  ylab("ROI") +
+  ggtitle("Installment v.s. ROI")
+```
+
+Next, consider `True ROI` - `Prediction ROI` to see how will the customer return act
+
+```{r}
+ggplot(predictcbind) +
+  geom_smooth(aes(x = installment, y = ROI - prediction), color = "navy") +
+  ylab("difference between prediction and TrueROI")
+```
+
+ROI error
+```{r}
+ggplot(predictcbind) +
+  geom_boxplot(aes(y = ROI, color = "TrueROI")) +
+  geom_boxplot(aes(y = prediction, color = "Predict ROI")) 
+```
+```{r}
+ggplot(predictcbind) +
+  geom_boxplot(aes(y = ROI - prediction), color = "navy") +
+  ylab("difference between prediction and TrueROI") +
+  ggtitle("ROI difference")
+```
+
+```{r}
+predictcbind <- predictcbind %>%
+  mutate(ROIerror = ROI - prediction)
+summary(predictcbind$ROIerror)
+```
+
+
+```{r}
+#ideally, this one should be a diagonal line meaning the values on x are close to equal the values of y. 
+
+ggplot(predictcbind, mapping = aes(prediction, ROI))+
+  geom_point()+
+  geom_smooth(color= "tomato", linetype = "dashed")+
+  xlim(-10000,10000) +
+  ylim(-10000, 10000) 
+``` 
+
+
+
+
+  
+```
+{r}
+ggplot(testResults, mapping = aes(x = ROI)) +
+  geom_density(color = "black", size = 1) +
+  geom_vline(aes(xintercept = mean(ROI)),
+             color = "black", 
+             size = 0.7) +
+  geom_density(aes(x = rf), color = "tomato") +
+  geom_vline(aes(xintercept = mean(rf)),
+             color = "tomato",
+             linetype = "dashed", 
+             size = 0.7) +
+  coord_cartesian(xlim=c(-5000, 5000)) +
+  xlab("ROI")
+
+```
+
+
+```
+{r}
+save.image(file = "LoanRegression_numeric.RData")
+```
