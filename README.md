@@ -8,7 +8,7 @@ Making predictions and constructing a portfolio in the context of online peer-to
 
 On important thing that Jasmin will encounter, as in many real applications of predictive analytics, is that it is far from trivial to progress from building a predictive model to using the model to make intelligent decisions. In her prior classes, Jasmin's exercises often ended with estimating the predictive ability of models on out-of-sample data. She will do that here as well—but then she will have to figure out how to estimate the return to expect from an investment. She will find that even with a seemingly good predictive model in hand, estimating the return of an investment requires additional analysis.
 
-The file ["IE2064 CS2 Report Starck_Liu.pdf"](https://github.com/ZoeLiuu/LendingLoanClub/blob/main/IE2064%20CS2%20Report%20_%20Starck_Liu.pdf)contains our final report.
+The file [IE2064 CS2 Report Starck_Liu.pdf](https://github.com/ZoeLiuu/LendingLoanClub/blob/main/IE2064%20CS2%20Report%20_%20Starck_Liu.pdf) contains our final report.
 
 #### Dataset: [Kaggle: Lending Club](https://www.kaggle.com/wordsforthewise/lending-club) 
 
